@@ -5,6 +5,10 @@ Mod Organizer 2 Support for Crimson Desert
 1. Copy and overwrite the dist/plugins into your **MO2 installation folder/plugins** directory.
 
 ## Build
+* Pre-requisites:
+  * [Go](https://go.dev/dl/) >= 1.24
+  * [Make](https://gnuwin32.sourceforge.net/packages/make.htm)
+* Build
 ```sh
 make
 ```
