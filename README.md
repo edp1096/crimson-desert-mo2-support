@@ -20,3 +20,5 @@ make
 
 > **Note:** Mod Organizer 2 (MO2) version **2.5.2 or higher (Portable Version)** is recommended.
 > [MO2 Releases](https://github.com/Modorganizer2/modorganizer/releases)
+
+Reference: https://github.com/lazorr410/crimson-desert-unpacker
