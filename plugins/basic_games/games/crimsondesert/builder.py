@@ -65,8 +65,13 @@ def _noop_logger(msg: str):
     pass
 
 
-def _resolve_loose_entry_path(rel_parts: tuple[str, ...]) -> str | None:
-    return core.resolve_mod_file_path(rel_parts)
+def _resolve_loose_entry_path(rel_parts: tuple[str, ...],
+                              files_dir: str = "files") -> str | None:
+    parts = list(rel_parts)
+    if (parts and files_dir.casefold() != "files"
+            and parts[0].casefold() == files_dir.casefold()):
+        parts[0] = "files"
+    return core.resolve_mod_file_path(tuple(parts))
 
 
 def _parse_json_mod(path: Path) -> list[dict] | None:
@@ -148,6 +153,18 @@ class CrimsonDesertBuilder:
         paz_in_mod: list[PazInMod] = []
         skip_dirs: set[str] = {META_DIR.casefold()}
 
+        files_dir = "files"
+        for meta_name in ("manifest.json", "mod.json"):
+            meta_path = mod_dir / meta_name
+            if meta_path.is_file():
+                try:
+                    meta = json.loads(meta_path.read_text(encoding="utf-8"))
+                    if isinstance(meta, dict) and isinstance(meta.get("files_dir"), str):
+                        files_dir = meta["files_dir"]
+                        break
+                except Exception:
+                    pass
+
         for d in mod_dir.iterdir():
             if d.is_dir() and d.name.isdigit() and any(d.glob("*.pamt")):
                 paz_in_mod.append(PazInMod(source_dir=d))
@@ -178,7 +195,7 @@ class CrimsonDesertBuilder:
                 except Exception:
                     pass
 
-            entry_path = _resolve_loose_entry_path(rel.parts)
+            entry_path = _resolve_loose_entry_path(rel.parts, files_dir)
             if entry_path:
                 loose_files.append(LooseFile(path=f, entry_path=entry_path))
 

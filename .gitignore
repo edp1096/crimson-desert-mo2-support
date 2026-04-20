@@ -1,4 +1,5 @@
 __pycache__
 *.dll
+!paz_core.dll
 *.so
 *.h

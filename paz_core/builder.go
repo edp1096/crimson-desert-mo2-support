@@ -124,7 +124,21 @@ func FindLightEntry(idx *GameIndex, gamePath string, sourceGroup string) *LightE
 		return &lights[0]
 	}
 
-	// 3. Filename fallback in source group
+	// 3. Suffix match: find entries ending with the query path
+	//    e.g. "ui/inputmap.xml" matches "ui/xml/gamemain/play/ui/inputmap.xml"
+	//    More specific than filename-only fallback.
+	suffix := "/" + key
+	var suffixMatches []LightEntry
+	for p, llist := range idx.Global {
+		if strings.HasSuffix(p, suffix) {
+			suffixMatches = append(suffixMatches, llist[0])
+		}
+	}
+	if len(suffixMatches) == 1 {
+		return &suffixMatches[0]
+	}
+
+	// 4. Filename fallback in source group
 	basename := key
 	if i := strings.LastIndex(key, "/"); i >= 0 {
 		basename = key[i+1:]
@@ -145,11 +159,11 @@ func FindLightEntry(idx *GameIndex, gamePath string, sourceGroup string) *LightE
 				if len(matches) == 1 {
 					return &matches[0]
 				}
-			}
+				}
 		}
 	}
 
-	// 4. Filename fallback in global
+	// 5. Filename fallback in global
 	var matches []LightEntry
 	for p, llist := range idx.Global {
 		if strings.HasSuffix(p, "/"+basename) || p == basename {
