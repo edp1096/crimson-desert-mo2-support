@@ -42,7 +42,7 @@ def _setup_signatures(lib: ctypes.CDLL):
     lib.PazCoreHashlittle.restype = ctypes.c_uint32
     lib.PazCoreHashlittle.argtypes = [ctypes.c_char_p, ctypes.c_int, ctypes.c_uint32]
 
-    lib.PazCoreParsePamt.restype = ctypes.c_char_p
+    lib.PazCoreParsePamt.restype = ctypes.c_void_p
     lib.PazCoreParsePamt.argtypes = [ctypes.c_char_p]
     lib.PazCoreReadPamtHeaderCrc.restype = ctypes.c_uint32
     lib.PazCoreReadPamtHeaderCrc.argtypes = [ctypes.c_char_p]
@@ -75,21 +75,21 @@ def _setup_signatures(lib: ctypes.CDLL):
     lib.PazCoreGetDDSMetadata.restype = None
     lib.PazCoreGetDDSMetadata.argtypes = [ctypes.c_void_p, ctypes.c_int, ctypes.c_void_p]
 
-    lib.PazCoreParsePapgt.restype = ctypes.c_char_p
+    lib.PazCoreParsePapgt.restype = ctypes.c_void_p
     lib.PazCoreParsePapgt.argtypes = [ctypes.c_char_p]
     lib.PazCoreBuildPapgt.restype = ctypes.c_void_p
     lib.PazCoreBuildPapgt.argtypes = [
         ctypes.c_char_p, ctypes.c_char_p, ctypes.c_char_p, ctypes.POINTER(ctypes.c_int),
     ]
 
-    lib.PazCoreReadPathc.restype = ctypes.c_char_p
+    lib.PazCoreReadPathc.restype = ctypes.c_void_p
     lib.PazCoreReadPathc.argtypes = [ctypes.c_char_p]
     lib.PazCoreSerializePathc.restype = ctypes.c_void_p
     lib.PazCoreSerializePathc.argtypes = [ctypes.c_char_p, ctypes.POINTER(ctypes.c_int)]
     lib.PazCoreGetPathcHash.restype = ctypes.c_uint32
     lib.PazCoreGetPathcHash.argtypes = [ctypes.c_char_p]
 
-    lib.PazCoreReadPaver.restype = ctypes.c_char_p
+    lib.PazCoreReadPaver.restype = ctypes.c_void_p
     lib.PazCoreReadPaver.argtypes = [ctypes.c_char_p]
     lib.PazCoreSerializePaver.restype = ctypes.c_void_p
     lib.PazCoreSerializePaver.argtypes = [ctypes.c_char_p, ctypes.POINTER(ctypes.c_int)]
@@ -98,10 +98,10 @@ def _setup_signatures(lib: ctypes.CDLL):
     lib.PazCoreBuildGameIndex.argtypes = [ctypes.c_char_p]
     lib.PazCoreFreeGameIndex.restype = None
     lib.PazCoreFreeGameIndex.argtypes = [ctypes.c_uint64]
-    lib.PazCoreFindLightEntry.restype = ctypes.c_char_p
+    lib.PazCoreFindLightEntry.restype = ctypes.c_void_p
     lib.PazCoreFindLightEntry.argtypes = [ctypes.c_uint64, ctypes.c_char_p, ctypes.c_char_p]
 
-    lib.PazCoreResolveLooseEntryPath.restype = ctypes.c_char_p
+    lib.PazCoreResolveLooseEntryPath.restype = ctypes.c_void_p
     lib.PazCoreResolveLooseEntryPath.argtypes = [ctypes.c_char_p]
     lib.PazCoreInferFlags.restype = ctypes.c_uint16
     lib.PazCoreInferFlags.argtypes = [ctypes.c_char_p]
@@ -122,6 +122,16 @@ def _buf(ptr, length: int) -> bytes:
         return b""
     lib = _load_dll()
     data = ctypes.string_at(ptr, length)
+    lib.PazCoreFree(ptr)
+    return data
+
+
+def _str(ptr) -> bytes:
+    """Read a C string returned as c_void_p, copy it, and free the original."""
+    if not ptr:
+        return b""
+    lib = _load_dll()
+    data = ctypes.string_at(ptr)
     lib.PazCoreFree(ptr)
     return data
 
@@ -191,8 +201,7 @@ def compute_hash(data: bytes, seed: int = 0x000C5EDE) -> int:
 
 def read_archive_index(pamt_path: str | Path) -> ArchiveBundle:
     lib = _load_dll()
-    raw = lib.PazCoreParsePamt(_enc(str(pamt_path)))
-    obj = json.loads(raw)
+    obj = json.loads(_str(lib.PazCoreParsePamt(_enc(str(pamt_path)))))
     if "error" in obj:
         raise RuntimeError(obj["error"])
     entries = [
@@ -250,8 +259,7 @@ def normalize_path(value: str) -> str:
 
 def read_registry_template(path: str | Path) -> dict:
     lib = _load_dll()
-    raw = lib.PazCoreParsePapgt(_enc(str(path)))
-    obj = json.loads(raw)
+    obj = json.loads(_str(lib.PazCoreParsePapgt(_enc(str(path)))))
     if "error" in obj:
         raise RuntimeError(obj["error"])
     return obj
@@ -275,8 +283,7 @@ def build_registry_bytes(template: dict, bundle_names: list[str],
 
 def read_texture_index(path: str | Path) -> dict:
     lib = _load_dll()
-    raw = lib.PazCoreReadPathc(_enc(str(path)))
-    obj = json.loads(raw)
+    obj = json.loads(_str(lib.PazCoreReadPathc(_enc(str(path)))))
     if "error" in obj:
         raise RuntimeError(obj["error"])
     return obj
@@ -317,8 +324,7 @@ def dds_template_record(dds_data: bytes, record_size: int = 0x94) -> bytes:
 
 def read_version(path: str | Path) -> VersionInfo:
     lib = _load_dll()
-    raw = lib.PazCoreReadPaver(_enc(str(path)))
-    obj = json.loads(raw)
+    obj = json.loads(_str(lib.PazCoreReadPaver(_enc(str(path)))))
     if "error" in obj:
         raise RuntimeError(obj["error"])
     return VersionInfo(**obj)
@@ -340,7 +346,7 @@ class GameArchiveIndex:
 
     def find(self, game_path: str, source_group: str | None = None) -> IndexEntry | None:
         sg = _enc(source_group) if source_group else None
-        raw = self._lib.PazCoreFindLightEntry(self._handle, _enc(game_path), sg)
+        raw = _str(self._lib.PazCoreFindLightEntry(self._handle, _enc(game_path), sg))
         if not raw or raw == b"null":
             return None
         obj = json.loads(raw)
@@ -349,7 +355,7 @@ class GameArchiveIndex:
 
 def resolve_mod_file_path(rel_parts: tuple[str, ...] | list[str]) -> str | None:
     lib = _load_dll()
-    raw = lib.PazCoreResolveLooseEntryPath(_enc(json.dumps(list(rel_parts))))
+    raw = _str(lib.PazCoreResolveLooseEntryPath(_enc(json.dumps(list(rel_parts)))))
     result = raw.decode("utf-8") if raw else ""
     return result if result else None
 

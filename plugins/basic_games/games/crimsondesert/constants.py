@@ -2,8 +2,8 @@ from __future__ import annotations
 
 PLUGIN_NAME = "Crimson Desert Support Plugin"
 PLUGIN_AUTHOR = "edp1096"
-PLUGIN_VERSION = "0.0.1"
-PLUGIN_VERSION_TUPLE = (0, 0, 1, 0)
+PLUGIN_VERSION = "0.1.3"
+PLUGIN_VERSION_TUPLE = (0, 1, 3, 0)
 
 TOOL_PLUGIN_NAME = "Crimson Desert PAZ Builder"
 

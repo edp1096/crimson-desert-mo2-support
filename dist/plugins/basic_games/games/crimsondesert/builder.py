@@ -17,7 +17,7 @@ from .constants import (
     PAPGT_FILENAME, PATHC_FILENAME, PAVER_FILENAME,
 )
 from . import core
-from .util import BuildLogger, clean_overwrite_meta
+from .util import BuildLogger, clean_overwrite_meta, trace
 
 ProgressCallback = Callable[[int, int], None]
 
@@ -220,6 +220,7 @@ class CrimsonDesertBuilder:
     def build(self, logger: BuildLogger | None = None,
               on_progress: ProgressCallback | None = None,
               force: bool = False) -> BuildResult:
+        trace("=== BUILD START ===")
         log = logger or _noop_logger
         progress = on_progress or (lambda c, t: None)
         warnings: list[str] = []
@@ -251,7 +252,9 @@ class CrimsonDesertBuilder:
         else:
             self._flush_stale(logger=log)
 
+        trace("scan_mods start")
         mods = self.scan_mods()
+        trace(f"scan_mods done: {len(mods)} mods")
         buildable = [
             m for m in mods
             if m.mod_type in ("json_patch", "loose_files", "mixed") or m.paz_in_mod
@@ -307,7 +310,9 @@ class CrimsonDesertBuilder:
                     skipped += 1
                 else:
                     try:
+                        trace(f"_build_mod start: {mi.name}")
                         self._build_mod(mi, bnum, log)
+                        trace(f"_build_mod done: {mi.name}")
                         built_count += 1
                     except Exception as e:
                         warnings.append(f"Failed to build {mi.name}: {e}")
@@ -337,7 +342,9 @@ class CrimsonDesertBuilder:
 
     def _build_mod(self, mi: ModInfo, build_num: int, log: BuildLogger):
         log(f"Building:  {mi.name} ({mi.mod_type})")
+        trace("  _ensure_index")
         self._ensure_index()
+        trace("  _ensure_index done")
         bdir = mi.path / f"{build_num:04d}"
         bdir.mkdir(parents=True, exist_ok=True)
 
@@ -348,7 +355,9 @@ class CrimsonDesertBuilder:
             self._process_patches(jpf, paz_payload, packed, log)
 
         for lf in mi.loose_files:
+            trace(f"  _process_loose: {lf.entry_path}")
             self._process_loose(lf, mi.name, paz_payload, packed, log)
+            trace(f"  _process_loose done: {lf.entry_path}")
 
         if not packed:
             log(f"Warning: No packable content in {mi.name}")
@@ -367,6 +376,7 @@ class CrimsonDesertBuilder:
             for p in packed
         ]
         paz_infos = [[0, core.payload_checksum(paz_bytes), len(paz_bytes)]]
+        trace("  BuildPamt")
         lib = core._load_dll()
         out_len = _ct.c_int(0)
         ptr = lib.PazCoreBuildPamt(
@@ -376,6 +386,7 @@ class CrimsonDesertBuilder:
         )
         pamt_bytes = core._buf(ptr, out_len.value)
         (bdir / "0.pamt").write_bytes(pamt_bytes)
+        trace("  BuildPamt done")
 
         log(f"Built:     {mi.name} -> {bdir.name}/ "
             f"({len(packed)} entries, {len(paz_bytes)} bytes)")
@@ -426,7 +437,9 @@ class CrimsonDesertBuilder:
         file_data = lf.path.read_bytes()
         original_path = lf.entry_path
 
+        trace(f"    find({lf.entry_path})")
         light = self._game_index.find(lf.entry_path)
+        trace(f"    find -> {light.path if light else 'None'}")
         flags = light.flags if light else core.guess_flags(lf.entry_path)
         if light:
             lf.entry_path = light.path
@@ -441,7 +454,9 @@ class CrimsonDesertBuilder:
                 pass
 
         try:
+            trace(f"    pack_file({lf.entry_path}, flags=0x{flags:04X}, {len(file_data)} bytes)")
             packed_data, actual_flags = core.pack_file(file_data, flags, lf.entry_path)
+            trace(f"    pack_file done ({len(packed_data)} bytes)")
         except Exception as e:
             log(f"  Warning: Pack failed for {lf.entry_path}: {e}")
             return

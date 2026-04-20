@@ -7,6 +7,7 @@ package main
 import "C"
 import (
 	"encoding/json"
+	"sync"
 	"unsafe"
 )
 
@@ -15,6 +16,24 @@ import (
 //export PazCoreFree
 func PazCoreFree(ptr unsafe.Pointer) {
 	C.free(ptr)
+}
+
+// copyToC allocates C memory, copies data, and sets outLen.
+// Returns nil and sets outLen=0 on allocation failure.
+func copyToC(data []byte, outLen *C.int) unsafe.Pointer {
+	n := len(data)
+	if n == 0 {
+		*outLen = 0
+		return nil
+	}
+	ptr := C.malloc(C.size_t(n))
+	if ptr == nil {
+		*outLen = 0
+		return nil
+	}
+	*outLen = C.int(n)
+	copy((*[1 << 30]byte)(ptr)[:n], data)
+	return ptr
 }
 
 // --- Jenkins hash ---
@@ -66,10 +85,7 @@ func PazCoreExtractEntry(
 		return nil
 	}
 
-	*outLen = C.int(len(data))
-	ptr := C.malloc(C.size_t(len(data)))
-	copy((*[1 << 30]byte)(ptr)[:len(data)], data)
-	return ptr
+	return copyToC(data, outLen)
 }
 
 // --- Entry packing ---
@@ -87,11 +103,8 @@ func PazCorePackEntry(
 	goData := C.GoBytes(data, dataLen)
 	payload, actualFlags := PackEntryBytes(goData, uint16(flags), C.GoString(entryPath), encryptXML != 0)
 
-	*outLen = C.int(len(payload))
 	*outFlags = C.uint16_t(actualFlags)
-	ptr := C.malloc(C.size_t(len(payload)))
-	copy((*[1 << 30]byte)(ptr)[:len(payload)], payload)
-	return ptr
+	return copyToC(payload, outLen)
 }
 
 // --- PAMT building ---
@@ -111,11 +124,7 @@ func PazCoreBuildPamt(entriesJSON *C.char, pazInfosJSON *C.char, unknownField C.
 	}
 
 	result := BuildPamtBytes(entries, pazInfos, uint32(unknownField))
-
-	*outLen = C.int(len(result))
-	ptr := C.malloc(C.size_t(len(result)))
-	copy((*[1 << 30]byte)(ptr)[:len(result)], result)
-	return ptr
+	return copyToC(result, outLen)
 }
 
 // --- ChaCha20 ---
@@ -124,11 +133,7 @@ func PazCoreBuildPamt(entriesJSON *C.char, pazInfosJSON *C.char, unknownField C.
 func PazCoreChacha20(data unsafe.Pointer, dataLen C.int, filename *C.char, outLen *C.int) unsafe.Pointer {
 	goData := C.GoBytes(data, dataLen)
 	result := ChaCha20Crypt(goData, C.GoString(filename))
-
-	*outLen = C.int(len(result))
-	ptr := C.malloc(C.size_t(len(result)))
-	copy((*[1 << 30]byte)(ptr)[:len(result)], result)
-	return ptr
+	return copyToC(result, outLen)
 }
 
 // --- LZ4 ---
@@ -141,11 +146,7 @@ func PazCoreLZ4Decompress(data unsafe.Pointer, dataLen C.int, origSize C.int, ou
 		*outLen = 0
 		return nil
 	}
-
-	*outLen = C.int(len(result))
-	ptr := C.malloc(C.size_t(len(result)))
-	copy((*[1 << 30]byte)(ptr)[:len(result)], result)
-	return ptr
+	return copyToC(result, outLen)
 }
 
 //export PazCoreLZ4Compress
@@ -156,11 +157,7 @@ func PazCoreLZ4Compress(data unsafe.Pointer, dataLen C.int, outLen *C.int) unsaf
 		*outLen = 0
 		return nil
 	}
-
-	*outLen = C.int(len(result))
-	ptr := C.malloc(C.size_t(len(result)))
-	copy((*[1 << 30]byte)(ptr)[:len(result)], result)
-	return ptr
+	return copyToC(result, outLen)
 }
 
 // --- PAMT Header CRC ---
@@ -223,11 +220,7 @@ func PazCoreBuildPapgt(templateJSON *C.char, modNamesJSON *C.char, crcMapJSON *C
 		*outLen = 0
 		return nil
 	}
-
-	*outLen = C.int(len(result))
-	ptr := C.malloc(C.size_t(len(result)))
-	copy((*[1 << 30]byte)(ptr)[:len(result)], result)
-	return ptr
+	return copyToC(result, outLen)
 }
 
 // --- PATHC ---
@@ -252,10 +245,7 @@ func PazCoreSerializePathc(pathcJSON *C.char, outLen *C.int) unsafe.Pointer {
 	}
 
 	result := SerializePathc(&pathc)
-	*outLen = C.int(len(result))
-	ptr := C.malloc(C.size_t(len(result)))
-	copy((*[1 << 30]byte)(ptr)[:len(result)], result)
-	return ptr
+	return copyToC(result, outLen)
 }
 
 //export PazCoreGetPathcHash
@@ -296,10 +286,7 @@ func PazCoreSerializePaver(paverJSON *C.char, outLen *C.int) unsafe.Pointer {
 	}
 
 	result := SerializePaver(&info)
-	*outLen = C.int(len(result))
-	ptr := C.malloc(C.size_t(len(result)))
-	copy((*[1 << 30]byte)(ptr)[:len(result)], result)
-	return ptr
+	return copyToC(result, outLen)
 }
 
 // --- Builder: Game Index ---
@@ -361,10 +348,7 @@ func PazCoreApplyHexPatches(data unsafe.Pointer, dataLen C.int, changesJSON *C.c
 		*outLen = 0
 		return nil
 	}
-	*outLen = C.int(len(result))
-	ptr := C.malloc(C.size_t(len(result)))
-	copy((*[1 << 30]byte)(ptr)[:len(result)], result)
-	return ptr
+	return copyToC(result, outLen)
 }
 
 // --- Builder: Build PAZ+PAMT ---
@@ -380,7 +364,17 @@ func PazCoreBuildModPAZ(entriesJSON *C.char, gamePath *C.char, pazOutLen *C.int,
 
 	// Return concatenated: [paz_bytes][pamt_bytes]
 	total := len(pazBytes) + len(pamtBytes)
+	if total == 0 {
+		*pazOutLen = 0
+		*pamtOutLen = 0
+		return nil
+	}
 	ptr := C.malloc(C.size_t(total))
+	if ptr == nil {
+		*pazOutLen = 0
+		*pamtOutLen = 0
+		return nil
+	}
 	buf := (*[1 << 30]byte)(ptr)[:total]
 	copy(buf, pazBytes)
 	copy(buf[len(pazBytes):], pamtBytes)
@@ -393,11 +387,14 @@ func PazCoreBuildModPAZ(entriesJSON *C.char, gamePath *C.char, pazOutLen *C.int,
 // --- Handle management for opaque pointers ---
 
 var (
+	handleMu      sync.Mutex
 	handleCounter uint64 = 1
 	handles              = make(map[uint64]interface{})
 )
 
 func registerHandle(obj interface{}) uint64 {
+	handleMu.Lock()
+	defer handleMu.Unlock()
 	h := handleCounter
 	handleCounter++
 	handles[h] = obj
@@ -405,10 +402,14 @@ func registerHandle(obj interface{}) uint64 {
 }
 
 func getHandle(h uint64) interface{} {
+	handleMu.Lock()
+	defer handleMu.Unlock()
 	return handles[h]
 }
 
 func unregisterHandle(h uint64) {
+	handleMu.Lock()
+	defer handleMu.Unlock()
 	delete(handles, h)
 }
 
